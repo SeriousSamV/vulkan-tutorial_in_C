@@ -53,13 +53,15 @@ bool checkValidationSupport(const char **validationLayers, const size_t validati
 const char *const *getRequiredExtensions(uint32_t *glfwExtensionCount) {
     const char **glfwExtensions;
     glfwExtensions = glfwGetRequiredInstanceExtensions(glfwExtensionCount);
-    (*glfwExtensionCount) = (*glfwExtensionCount) + 1;
+    (*glfwExtensionCount) = (*glfwExtensionCount) + 3;
     if (glfwExtensions != nullptr) {
         glfwExtensions = realloc(glfwExtensions, *glfwExtensionCount); // NOLINT(*-suspicious-realloc-usage)
     } else {
         glfwExtensions = calloc(*glfwExtensionCount, sizeof(char *));
     }
     glfwExtensions[*glfwExtensionCount - 1] = strdup(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    glfwExtensions[*glfwExtensionCount - 2] = strdup(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
+    glfwExtensions[*glfwExtensionCount - 3] = strdup(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
 
     return glfwExtensions;
 }
