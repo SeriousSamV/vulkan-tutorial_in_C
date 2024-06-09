@@ -286,6 +286,12 @@ int main(void) {
     createInfo.enabledLayerCount = validationLayersCount;
     createInfo.ppEnabledLayerNames = (const char *const *) validationLayers;
     createInfo.pEnabledFeatures = &deviceFeatures;
+    // region `VUID-VkDeviceCreateInfo-pProperties-04451` fix
+    createInfo.enabledExtensionCount = 1;
+    char **deviceCreateInfoExtensions = calloc(1, sizeof(char *));
+    deviceCreateInfoExtensions[0] = strdup("VK_KHR_portability_subset");
+    createInfo.ppEnabledExtensionNames = (const char *const *) deviceCreateInfoExtensions;
+    // endregion
     if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS) {
         perror("failed to create logical device!");
         exit(EXIT_FAILURE);
@@ -294,9 +300,10 @@ int main(void) {
     VkQueue graphicsQueue;
     vkGetDeviceQueue(device, indices.graphicsFamily, 0, &graphicsQueue);
     // endregion
-    // endregion initVulkan
+    // region window surface
 
-    printAvailableExtensions();
+    // endregion
+    // endregion initVulkan
 
     // region mainLoop
     while (!glfwWindowShouldClose(window)) {
