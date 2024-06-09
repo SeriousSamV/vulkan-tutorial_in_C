@@ -11,6 +11,14 @@
 
 #define nullptr NULL
 
+typedef struct {
+    bool isGraphicsFamilySet;
+    uint32_t graphicsFamily;
+} QueueFamilyIndices;
+
+uint32_t rateDeviceSuitability(VkPhysicalDevice device);
+QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
+
 void printAvailableExtensions() {
     uint32_t extensionCount = 0;
     vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
@@ -109,6 +117,83 @@ void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT *create
     createInfo->pfnUserCallback = debugCallback;
 }
 
+bool isDeviceSuitable(VkPhysicalDevice device) {
+    QueueFamilyIndices indices = findQueueFamilies(device);
+
+    return indices.isGraphicsFamilySet;
+}
+
+VkPhysicalDevice pickPhysicalDevice(const VkPhysicalDevice *devices, const size_t devicesCount) {
+    struct Candidate {
+        uint32_t rating;
+        VkPhysicalDevice device;
+    };
+    struct Candidate * candidates = calloc(devicesCount, sizeof(struct Candidate));
+
+    for (size_t i = 0; i < devicesCount; ++i) {
+        VkPhysicalDevice device = devices[i];
+        candidates[i].rating = rateDeviceSuitability(device);
+        candidates[i].device = device;
+    }
+
+    size_t maxRatingIndex = 0;
+    uint32_t maxRating = 0;
+    for (int i = 0; i < devicesCount; ++i) {
+        if (candidates[i].rating > maxRating) {
+            maxRatingIndex = i;
+        }
+    }
+    printf("max rating: %d", maxRating);
+
+    free(candidates);
+    return devices[maxRatingIndex];
+}
+
+uint32_t rateDeviceSuitability(VkPhysicalDevice device) {
+    VkPhysicalDeviceProperties deviceProperties;
+    vkGetPhysicalDeviceProperties(device, &deviceProperties);
+    VkPhysicalDeviceFeatures deviceFeatures;
+    vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
+
+    uint32_t score = 0;
+
+    // Discrete GPUs have a significant performance advantage
+    if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+        score += 1000;
+    }
+
+    // Maximum possible size of textures affects graphics quality
+    score += deviceProperties.limits.maxImageDimension2D;
+
+    // Application can't function without geometry shaders
+    if (!deviceFeatures.geometryShader) {
+        return 0;
+    }
+
+    return score;
+}
+
+QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device) {
+    uint32_t queueFamilyCount = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+    VkQueueFamilyProperties *queueFamilies = calloc(queueFamilyCount, sizeof(VkQueueFamilyProperties));
+    vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies);
+
+    QueueFamilyIndices indices = {};
+    for (int i = 0; i < queueFamilyCount; ++i) {
+        VkQueueFamilyProperties queueFamily = queueFamilies[i];
+        if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+            indices.isGraphicsFamilySet = true;
+            indices.graphicsFamily = i;
+        }
+        if (indices.isGraphicsFamilySet) {
+            break;
+        }
+    }
+
+    return indices;
+}
+
 int main(void) {
     // region globals
     const size_t validationLayersCount = 1;
@@ -160,6 +245,27 @@ int main(void) {
     VkDebugUtilsMessengerEXT debugMessenger;
     if (CreateDebugUtilsMessengerEXT(instance, &debugCreateInfo, nullptr, &debugMessenger) != VK_SUCCESS) {
         perror("failed to set up debug messenger!");
+        exit(EXIT_FAILURE);
+    }
+    // endregion
+    // region pickup physical device
+    VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
+    uint32_t deviceCount = 0;
+    vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
+    if (deviceCount == 0) {
+        perror("failed to find GPUs with Vulkan support!");
+        exit(EXIT_FAILURE);
+    }
+    VkPhysicalDevice *devices = calloc(deviceCount, sizeof(VkPhysicalDevice));
+    vkEnumeratePhysicalDevices(instance, &deviceCount, devices);
+    for (int i = 0; i < deviceCount; ++i) {
+        if (isDeviceSuitable(devices[i])) {
+            physicalDevice = devices[i];
+            break;
+        }
+    }
+    if (physicalDevice == VK_NULL_HANDLE) {
+        perror("failed to find a suitable GPU");
         exit(EXIT_FAILURE);
     }
     // endregion
