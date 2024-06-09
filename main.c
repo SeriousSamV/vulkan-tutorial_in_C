@@ -1,4 +1,7 @@
+#pragma clang diagnostic push
+#pragma ide diagnostic ignored "OCUnusedMacroInspection"
 #define GLFW_INCLUDE_VULKAN
+#pragma clang diagnostic pop
 
 #include <GLFW/glfw3.h>
 
@@ -14,12 +17,16 @@
 typedef struct {
     bool isGraphicsFamilySet;
     uint32_t graphicsFamily;
+
+    bool isPresentFamilySet;
+    uint32_t presentFamily;
 } QueueFamilyIndices;
 
 uint32_t rateDeviceSuitability(VkPhysicalDevice device);
-QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
 
-void printAvailableExtensions() {
+QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device, VkSurfaceKHR surface);
+
+__attribute__((unused)) void printAvailableExtensions() {
     uint32_t extensionCount = 0;
     vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
 
@@ -58,20 +65,19 @@ bool checkValidationSupport(const char **validationLayers, const size_t validati
     return true;
 }
 
-const char *const *getRequiredExtensions(uint32_t *glfwExtensionCount) {
-    const char **glfwExtensions;
-    glfwExtensions = glfwGetRequiredInstanceExtensions(glfwExtensionCount);
-    (*glfwExtensionCount) = (*glfwExtensionCount) + 3;
-    if (glfwExtensions != nullptr) {
-        glfwExtensions = realloc(glfwExtensions, *glfwExtensionCount); // NOLINT(*-suspicious-realloc-usage)
-    } else {
-        glfwExtensions = calloc(*glfwExtensionCount, sizeof(char *));
-    }
-    glfwExtensions[*glfwExtensionCount - 1] = strdup(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-    glfwExtensions[*glfwExtensionCount - 2] = strdup(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
-    glfwExtensions[*glfwExtensionCount - 3] = strdup(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+char **getRequiredExtensions(uint32_t *extensionsCount) {
+    const char **glfwExtensions = glfwGetRequiredInstanceExtensions(extensionsCount);
+    (*extensionsCount) = (*extensionsCount) + 3;
 
-    return glfwExtensions;
+    char **extensions = calloc(*extensionsCount, sizeof(char *));
+    for (int i = 0; i < *extensionsCount - 3; ++i) {
+        extensions[i] = strdup(glfwExtensions[i]);
+    }
+    extensions[*extensionsCount - 1] = strdup(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+    extensions[*extensionsCount - 2] = strdup(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
+    extensions[*extensionsCount - 3] = strdup(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+
+    return extensions;
 }
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL
@@ -117,18 +123,18 @@ void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT *create
     createInfo->pfnUserCallback = debugCallback;
 }
 
-bool isDeviceSuitable(VkPhysicalDevice device) {
-    QueueFamilyIndices indices = findQueueFamilies(device);
+bool isDeviceSuitable(VkPhysicalDevice device, VkSurfaceKHR surface) {
+    QueueFamilyIndices indices = findQueueFamilies(device, surface);
 
-    return indices.isGraphicsFamilySet;
+    return indices.isGraphicsFamilySet && indices.isPresentFamilySet;
 }
 
-VkPhysicalDevice pickPhysicalDevice(const VkPhysicalDevice *devices, const size_t devicesCount) {
+__attribute__((unused)) VkPhysicalDevice pickPhysicalDevice(const VkPhysicalDevice *devices, const size_t devicesCount) {
     struct Candidate {
         uint32_t rating;
         VkPhysicalDevice device;
     };
-    struct Candidate * candidates = calloc(devicesCount, sizeof(struct Candidate));
+    struct Candidate *candidates = calloc(devicesCount, sizeof(struct Candidate));
 
     for (size_t i = 0; i < devicesCount; ++i) {
         VkPhysicalDevice device = devices[i];
@@ -173,7 +179,7 @@ uint32_t rateDeviceSuitability(VkPhysicalDevice device) {
     return score;
 }
 
-QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device) {
+QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device, VkSurfaceKHR surface) {
     uint32_t queueFamilyCount = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
     VkQueueFamilyProperties *queueFamilies = calloc(queueFamilyCount, sizeof(VkQueueFamilyProperties));
@@ -181,6 +187,12 @@ QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device) {
 
     QueueFamilyIndices indices = {};
     for (int i = 0; i < queueFamilyCount; ++i) {
+        VkBool32 presentSupport = false;
+        vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
+        if (presentSupport) {
+            indices.isPresentFamilySet = true;
+            indices.presentFamily = i;
+        }
         VkQueueFamilyProperties queueFamily = queueFamilies[i];
         if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) {
             indices.isGraphicsFamilySet = true;
@@ -202,9 +214,14 @@ int main(void) {
     // endregion globals
 
     // region initWindow
+    glfwInit();
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
     GLFWwindow *window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", NULL, NULL);
+    if (window == nullptr) {
+        perror("failed to create window");
+        exit(EXIT_FAILURE);
+    }
     // endregion
 
     // region initVulkan
@@ -230,10 +247,10 @@ int main(void) {
     instanceCreateInfo.pApplicationInfo = &appInfo;
     instanceCreateInfo.pNext = (VkDebugUtilsMessengerCreateInfoEXT *) &debugCreateInfo;
     uint32_t extensionCount = 0;
-    const char *const *extensions = getRequiredExtensions(&extensionCount);
+    char **extensions = (char **) getRequiredExtensions(&extensionCount);
     instanceCreateInfo.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
     instanceCreateInfo.enabledExtensionCount = extensionCount;
-    instanceCreateInfo.ppEnabledExtensionNames = extensions;
+    instanceCreateInfo.ppEnabledExtensionNames = (const char *const *) extensions;
     instanceCreateInfo.enabledLayerCount = validationLayersCount;
     instanceCreateInfo.ppEnabledLayerNames = (const char *const *) validationLayers;
     if (vkCreateInstance(&instanceCreateInfo, NULL, &instance) != VK_SUCCESS) {
@@ -248,6 +265,13 @@ int main(void) {
         exit(EXIT_FAILURE);
     }
     // endregion
+    // region window surface
+    VkSurfaceKHR surface;
+    if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
+        perror("failed to create window surface!");
+        exit(EXIT_FAILURE);
+    }
+    // endregion
     // region pickup physical device
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
     uint32_t deviceCount = 0;
@@ -259,7 +283,7 @@ int main(void) {
     VkPhysicalDevice *devices = calloc(deviceCount, sizeof(VkPhysicalDevice));
     vkEnumeratePhysicalDevices(instance, &deviceCount, devices);
     for (int i = 0; i < deviceCount; ++i) {
-        if (isDeviceSuitable(devices[i])) {
+        if (isDeviceSuitable(devices[i], surface)) {
             physicalDevice = devices[i];
             break;
         }
@@ -271,7 +295,7 @@ int main(void) {
     // endregion
     // region logical devices and queues
     VkDevice device;
-    QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
+    QueueFamilyIndices indices = findQueueFamilies(physicalDevice, surface);
     VkDeviceQueueCreateInfo queueCreateInfo = {};
     queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
     queueCreateInfo.queueFamilyIndex = indices.graphicsFamily;
@@ -300,9 +324,6 @@ int main(void) {
     VkQueue graphicsQueue;
     vkGetDeviceQueue(device, indices.graphicsFamily, 0, &graphicsQueue);
     // endregion
-    // region window surface
-
-    // endregion
     // endregion initVulkan
 
     // region mainLoop
@@ -317,10 +338,17 @@ int main(void) {
         free(validationLayers[i]);
         validationLayers[i] = nullptr;
     }
-    // endregion cleanup globals
-    vkDestroyDevice(device, nullptr);
     free(validationLayers);
     validationLayers = nullptr;
+    for (int i = 0; i < extensionCount; ++i) {
+        free(extensions[i]);
+        extensions[i] = nullptr;
+    }
+    free(extensions);
+    extensions = nullptr;
+    // endregion cleanup globals
+    vkDestroySurfaceKHR(instance, surface, nullptr);
+    vkDestroyDevice(device, nullptr);
     DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
     vkDestroyInstance(instance, NULL);
     glfwDestroyWindow(window);
