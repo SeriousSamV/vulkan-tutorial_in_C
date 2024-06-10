@@ -46,6 +46,10 @@ VkPresentModeKHR chooseSwapPresentMode(const VkPresentModeKHR *availablePresentM
 
 VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR *capabilities, GLFWwindow *window);
 
+uint32_t * readFile(const char* filePath, size_t *len);
+
+VkShaderModule createShaderModule(VkDevice device, const uint32_t * code, size_t codeSize);
+
 __attribute__((unused)) void printAvailableExtensions() {
     uint32_t extensionCount = 0;
     vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
@@ -326,6 +330,34 @@ VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR *capabilities, GLFWwi
     }
 }
 
+uint32_t *readFile(const char *filePath, size_t *len) {
+    FILE* file = fopen(filePath, "rb");
+    fseek(file, 0, SEEK_END);
+    *len = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    uint32_t * buffer = calloc(*len, sizeof(buffer));
+    fread(buffer, 1, *len, file);
+    fclose(file);
+    return buffer;
+}
+
+__attribute__((unused)) VkShaderModule createShaderModule(VkDevice device, const uint32_t *code, const size_t codeSize) {
+    if (code == nullptr || codeSize < 1) {
+        perror("invalid code input!");
+        exit(EXIT_FAILURE);
+    }
+    VkShaderModuleCreateInfo createInfo = {};
+    createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    createInfo.codeSize = codeSize;
+    createInfo.pCode = (const uint32_t *) code;
+    VkShaderModule shaderModule;
+    if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
+        perror("failed to create shader module!");
+        exit(EXIT_FAILURE);
+    }
+    return shaderModule;
+}
+
 int main(void) {
     // region globals
     const size_t validationLayersCount = 1;
@@ -517,6 +549,30 @@ int main(void) {
         }
     }
     // endregion
+    // region graphics pipeline
+    size_t vertShaderCodeLen = 0;
+    uint32_t * const vertShaderCode = readFile("/Users/samuel_paul_v/CLionProjects/vulkan_in_c/vert.spv", &vertShaderCodeLen);
+    size_t fragShaderCodeLen = 0;
+    uint32_t * const fragShaderCode = readFile("/Users/samuel_paul_v/CLionProjects/vulkan_in_c/frag.spv", &fragShaderCodeLen);
+    VkShaderModule vertShaderModule = createShaderModule(device, vertShaderCode, vertShaderCodeLen);
+    VkShaderModule fragShaderModule = createShaderModule(device, fragShaderCode, fragShaderCodeLen);
+
+    VkPipelineShaderStageCreateInfo vertexShaderStageInfo = {};
+    vertexShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    vertexShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    vertexShaderStageInfo.module = vertShaderModule;
+    vertexShaderStageInfo.pName = "main";
+
+    VkPipelineShaderStageCreateInfo fragShaderStageInfo = {};
+    fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    fragShaderStageInfo.module = fragShaderModule;
+    fragShaderStageInfo.pName = "main";
+
+    VkPipelineShaderStageCreateInfo shaderStages[] = {vertexShaderStageInfo, fragShaderStageInfo};
+
+
+    // endregion
     // endregion initVulkan
 
     // region mainLoop
@@ -544,6 +600,10 @@ int main(void) {
     }
     free(deviceExtensions);
     // endregion cleanup globals
+    free(vertShaderCode);
+    free(fragShaderCode);
+    vkDestroyShaderModule(device, fragShaderModule, nullptr);
+    vkDestroyShaderModule(device, vertShaderModule, nullptr);
     for (int i = 0; i < swapChainImageCount; ++i) {
         vkDestroyImageView(device, swapChainImageViews[i], nullptr);
     }
