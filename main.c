@@ -53,6 +53,56 @@ VkShaderModule createShaderModule(VkDevice device, const uint32_t *code, size_t 
 void recordCommandBuffer(VkRenderPass renderPass, VkFramebuffer *swapChainFramebuffers, VkExtent2D swapChainExtent,
                          VkCommandBuffer commandBuffer, VkPipeline graphicsPipeline, uint32_t imageIndex);
 
+void drawFrame(VkDevice device, VkPipeline graphicsPipeline, VkRenderPass renderPass, VkSwapchainKHR swapChain,
+               VkExtent2D swapChainExtent, VkCommandBuffer commandBuffer, VkQueue graphicsQueue, VkQueue presentQueue,
+               VkFramebuffer *swapChainFramebuffers, VkSemaphore imageAvailableSemaphore,
+               VkSemaphore renderFinishedSemaphore, VkFence inFlightFence) {
+    vkWaitForFences(device, 1, &inFlightFence, VK_TRUE, UINT64_MAX);
+    vkResetFences(device, 1, &inFlightFence);
+
+    uint32_t imageIndex;
+    vkAcquireNextImageKHR(device, swapChain, UINT64_MAX, imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
+
+    vkResetCommandBuffer(commandBuffer, 0);
+    recordCommandBuffer(renderPass, swapChainFramebuffers, swapChainExtent, commandBuffer, graphicsPipeline,
+                        imageIndex);
+
+    VkSubmitInfo submitInfo = {};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+
+    VkSemaphore waitSemaphores[] = {imageAvailableSemaphore};
+    VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+    submitInfo.waitSemaphoreCount = 1;
+    submitInfo.pWaitSemaphores = waitSemaphores;
+    submitInfo.pWaitDstStageMask = waitStages;
+
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &commandBuffer;
+
+    VkSemaphore signalSemaphores[] = {renderFinishedSemaphore};
+    submitInfo.signalSemaphoreCount = 1;
+    submitInfo.pSignalSemaphores = signalSemaphores;
+
+    if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFence) != VK_SUCCESS) {
+        perror("failed to submit draw command buffer!");
+        exit(EXIT_FAILURE);
+    }
+
+    VkPresentInfoKHR presentInfo = {};
+    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+
+    presentInfo.waitSemaphoreCount = 1;
+    presentInfo.pWaitSemaphores = signalSemaphores;
+
+    VkSwapchainKHR swapChains[] = {swapChain};
+    presentInfo.swapchainCount = 1;
+    presentInfo.pSwapchains = swapChains;
+
+    presentInfo.pImageIndices = &imageIndex;
+
+    vkQueuePresentKHR(presentQueue, &presentInfo);
+}
+
 __attribute__((unused)) void printAvailableExtensions() {
     uint32_t extensionCount = 0;
     vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
@@ -606,6 +656,8 @@ int main(void) {
 
     VkQueue graphicsQueue;
     vkGetDeviceQueue(device, indices.graphicsFamily, 0, &graphicsQueue);
+    VkQueue presentQueue;
+    vkGetDeviceQueue(device, indices.presentFamily, 0, &presentQueue);
     // endregion
     // region swap chain
     SwapChainSupportDetails swapChainSupport = querySwapChainSupport(physicalDevice, surface);
@@ -817,6 +869,14 @@ int main(void) {
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &colorAttachmentRef;
 
+    VkSubpassDependency dependency = {};
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass = 0;
+    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.srcAccessMask = 0;
+    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
     /**
      * <h2>Render pass</h2>
      *
@@ -829,6 +889,8 @@ int main(void) {
     renderPassInfo.pAttachments = &colorAttachment;
     renderPassInfo.subpassCount = 1;
     renderPassInfo.pSubpasses = &subpass;
+    renderPassInfo.dependencyCount = 1;
+    renderPassInfo.pDependencies = &dependency;
     if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass) != VK_SUCCESS) {
         perror("failed to create render pass!");
         exit(EXIT_FAILURE);
@@ -1093,7 +1155,7 @@ int main(void) {
     VkGraphicsPipelineCreateInfo pipelineInfo = {};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
     VkPipelineShaderStageCreateInfo shaderStages[] = {vertexShaderStageInfo, fragShaderStageInfo};
-    pipelineInfo.stageCount = sizeof(shaderStages) / sizeof(VkPipelineShaderStageCreateInfo);
+    pipelineInfo.stageCount = 2;
     pipelineInfo.pStages = shaderStages;
     pipelineInfo.pVertexInputState = &vertexInputInfo;
     pipelineInfo.pInputAssemblyState = &inputAssembly;
@@ -1205,12 +1267,34 @@ int main(void) {
         exit(EXIT_FAILURE);
     }
     // endregion command pool
+    // region sync objects
+    VkSemaphore imageAvailableSemaphore;
+    VkSemaphore renderFinishedSemaphore;
+    VkFence inFlightFence;
+
+    VkSemaphoreCreateInfo semaphoreInfo = {};
+    semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+    VkFenceCreateInfo fenceInfo = {};
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+    if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphore) != VK_SUCCESS ||
+        vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphore) != VK_SUCCESS ||
+        vkCreateFence(device, &fenceInfo, nullptr, &inFlightFence) != VK_SUCCESS) {
+        perror("failed to create semaphores!");
+        exit(EXIT_FAILURE);
+    }
+    // endregion sync objects
     // endregion initVulkan
 
     // region mainLoop
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
+        drawFrame(device, graphicsPipeline, renderPass, swapChain, swapChainExtent, commandBuffer, graphicsQueue,
+                  presentQueue, swapChainFramebuffers, imageAvailableSemaphore, renderFinishedSemaphore, inFlightFence);
     }
+    vkDeviceWaitIdle(device);
     // endregion mainLoop
 
     // region cleanup
@@ -1232,6 +1316,11 @@ int main(void) {
     }
     free(deviceExtensions);
     // endregion cleanup globals
+    // region sync objects
+    vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
+    vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
+    vkDestroyFence(device, inFlightFence, nullptr);
+    // endregion sync objects
     vkDestroyCommandPool(device, commandPool, nullptr);
     for (int i = 0; i < swapChainFramebuffersCount; ++i) {
         vkDestroyFramebuffer(device, swapChainFramebuffers[i], nullptr);
