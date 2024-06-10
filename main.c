@@ -50,6 +50,9 @@ uint32_t *readFile(const char *filePath, size_t *len);
 
 VkShaderModule createShaderModule(VkDevice device, const uint32_t *code, size_t codeSize);
 
+void recordCommandBuffer(VkRenderPass renderPass, VkFramebuffer *swapChainFramebuffers, VkExtent2D swapChainExtent,
+                         VkCommandBuffer commandBuffer, VkPipeline graphicsPipeline, uint32_t imageIndex);
+
 __attribute__((unused)) void printAvailableExtensions() {
     uint32_t extensionCount = 0;
     vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
@@ -356,6 +359,133 @@ createShaderModule(VkDevice device, const uint32_t *code, const size_t codeSize)
         exit(EXIT_FAILURE);
     }
     return shaderModule;
+}
+
+void recordCommandBuffer(VkRenderPass renderPass, VkFramebuffer *swapChainFramebuffers, VkExtent2D swapChainExtent,
+                         VkCommandBuffer commandBuffer, VkPipeline graphicsPipeline, uint32_t imageIndex) {
+/**
+     * <h3>Command buffer recording</h3>
+     *
+     * Created with <code>VkCommandBufferBeginInfo</code> struct:
+     * <dl>
+     * <dt><code>flags</code></dt>
+     * <dd>
+     * Specifies how we're going to use the command buffer.
+     * <ul>
+     * <li><code>VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT</code>: The
+     * command buffer will be rerecorded right after executing it once.
+     * <li><code>VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT</code>:
+     * This is a secondary command buffer that will be entirely within a
+     * single render pass.
+     * <li><code>VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIG</code>: The
+     * command buffer can be resubmitted while it is also already pending
+     * execution.
+     * </ul>
+     * </dd>
+     * <dt><code>pInheritanceInfo</code></dt>
+     * <dd>Relevant for secondary command buffers. Specifies which state to
+     * inherit from the calling primary command buffers.</dd>
+     * <dl>
+     */
+    VkCommandBufferBeginInfo beginInfo = {};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = 0;
+    beginInfo.pInheritanceInfo = nullptr;
+    if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
+        perror("failed to begin recording command buffers!");
+        exit(EXIT_FAILURE);
+    }
+
+    /**
+     * <h3>Starting a render pass</h3>
+     *
+     * <p>Drawing starts by beginning the render pass with
+     * <code>vkCmdBeginRenderPass</code>. The render pass is configured
+     * using <code>VkRenderPassBeginInfo</code> struct:
+     * <dl>
+     * <dt><code>renderArea</code><dt>
+     * <dd>Defines the size of the render area. The render area defines
+     * where shader loads and stores will take place. The pixels outside
+     * this region will have undefined values.
+     * <i>It should match the size
+     * of the attachments for best performance.</i></dd>
+     * </dl>
+     * </p>
+     */
+    VkRenderPassBeginInfo renderPassBeginInfo = {};
+    renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassBeginInfo.renderPass = renderPass;
+    renderPassBeginInfo.framebuffer = swapChainFramebuffers[imageIndex];
+    renderPassBeginInfo.renderArea.offset.x = 0;
+    renderPassBeginInfo.renderArea.offset.y = 0;
+    renderPassBeginInfo.renderArea.extent = swapChainExtent;
+
+    VkClearValue clearColor = {{{0.f, 0.f, 0.f, 1.f}}};
+    renderPassBeginInfo.clearValueCount = 1;
+    renderPassBeginInfo.pClearValues = &clearColor;
+
+    /**
+     * The func <code>vkCmdBeginRenderPass</code>
+     * <dl>
+     * <dt><code>VkSubpassContents contents<code></dt>
+     * <dd>
+     * <ul>
+     * <li><code>VK_SUBPASS_CONTENTS_INLINE</code>: The render pass commands
+     * will be embedded in the primary command buffer itself and no
+     * secondary command buffers will be executed.
+     * <li><code>VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS</code>: The
+     * render pass commands will be executed from secondary command
+     * buffers.
+     * </ul>
+     * </dd>
+     * </dl>
+     */
+    vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    /**
+     * <h3>Basic drawing commands</h3>
+     *
+     * <p>
+     * use func <code>vkCmdBindPipeline</code> to bind the graphic pipeline.
+     * </p>
+     */
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+
+    VkViewport viewport = {};
+    viewport.x = 0.f;
+    viewport.y = 0.f;
+    viewport.width = (float) swapChainExtent.width;
+    viewport.height = (float) swapChainExtent.height;
+    viewport.minDepth = 0.f;
+    viewport.maxDepth = 1.f;
+    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+    VkRect2D scissor = {};
+    scissor.offset.x = 0;
+    scissor.offset.y = 0;
+    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+    /**
+     * issue the draw command using func <code>vkCmdDraw</code>
+     *
+     * <ul>
+     * <li><code>vertexCount</code>: number of vertices to draw
+     * <li><code>instanceCount</code>: <i>used for instanced rendering</i>
+     * <li><code>firstVertex</code>: Used as an offset into the vertex buffer;
+     * defined the lowest value of <code>gl_VertexIndex</code> in the
+     * vertex shader.
+     * <li><code>firstInstance</code>: <i>used for instanced rendering</i>.
+     * Defines the lowest value of <code>gl_InstanceIndex</code> in the
+     * vertex shader.
+     * </ul>
+     */
+    vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+
+    vkCmdEndRenderPass(commandBuffer);
+    if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
+        perror("failed to record command buffer!");
+        exit(EXIT_FAILURE);
+    }
 }
 
 int main(void) {
@@ -1004,6 +1134,77 @@ int main(void) {
         }
     }
     // endregion framebuffers
+    // region command pool
+    /**
+     * <h2>Command buffers</h2>
+     *
+     * <p>Commands in Vulkan (drawing ops, mem transfers, etc.) are not
+     * executed directly using function calls. We have to record all of the
+     * operations we want to perform in command buffer objects.</p>
+     *
+     * <h3>Command pools</h2>
+     *
+     * <p>Command pools manage the memory that is used to store the buffers
+     * and command buffers are allocated from them. Created using a
+     * <code>VkCommandPoolCreateInfo</code> struct:
+     * <dl>
+     * <dt><code>flags</code></dt>
+     * <dd>two possible flags for a command pool:
+     * <ul>
+     * <li><code>VK_COMMAND_POOL_CREATE_TRANSIENT_BIT</code>: Hint that
+     * command buffers are rerecorded with new commands very often.
+     * <li><code>VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT</code>:
+     * Allow command buffers to be rerecorded individually.
+     * <i> Without this flag, they all have to be reset together.</i>
+     * </ul>
+     * </dl>
+     * </p>
+     */
+    VkCommandPoolCreateInfo poolInfo = {};
+    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    poolInfo.queueFamilyIndex = indices.graphicsFamily;
+    VkCommandPool commandPool;
+    if (vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool) != VK_SUCCESS) {
+        perror("failed to create command pool!");
+        exit(EXIT_FAILURE);
+    }
+
+    /**
+     * <h3>Command buffer allocation</h3>
+     *
+     * <aside>
+     * Command buffers will be automatically freed when their command pool
+     * is destroyed.
+     * </aside>
+     *
+     * Created with a <code>VkCommandBufferAllocateInfo</code> struct:
+     * <dl>
+     * <dt><code>level</code></dt>
+     * <dd>
+     * Specifies if the allocated command buffers are primary or secondary
+     * command buffers.
+     * <ul>
+     * <li><code>VK_COMMAND_BUFFER_LEVEL_PRIMARY</code>: Can be submitted
+     * to a queue for execution, but cannot be called from other
+     * command buffers.
+     * <li><code>VK_COMMAND_BUFFER_LEVEL_SECONDARY</code>: Cannot be
+     * submitted directly, but can be called from primary command buffers.
+     * </ul>
+     * </dd>
+     * </dl>
+     */
+    VkCommandBuffer commandBuffer;
+    VkCommandBufferAllocateInfo allocInfo = {};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.commandPool = commandPool;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandBufferCount = 1;
+    if (vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer) != VK_SUCCESS) {
+        perror("failed to allocate command buffers!");
+        exit(EXIT_FAILURE);
+    }
+    // endregion command pool
     // endregion initVulkan
 
     // region mainLoop
@@ -1031,6 +1232,7 @@ int main(void) {
     }
     free(deviceExtensions);
     // endregion cleanup globals
+    vkDestroyCommandPool(device, commandPool, nullptr);
     for (int i = 0; i < swapChainFramebuffersCount; ++i) {
         vkDestroyFramebuffer(device, swapChainFramebuffers[i], nullptr);
     }
