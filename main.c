@@ -527,8 +527,9 @@ int main(void) {
     __attribute__((unused)) VkExtent2D swapChainExtent = extent;
     // endregion
     // region image views
-    VkImageView *swapChainImageViews = calloc(swapChainImageCount, sizeof(VkImageView));
-    for (int i = 0; i < swapChainImageCount; ++i) {
+    uint32_t swapChainImageViewsCount = swapChainImageCount;
+    VkImageView *swapChainImageViews = calloc(swapChainImageViewsCount, sizeof(VkImageView));
+    for (int i = 0; i < swapChainImageViewsCount; ++i) {
         VkImageViewCreateInfo imageViewCreateInfo = {};
         imageViewCreateInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
         imageViewCreateInfo.image = swapChainImages[i];
@@ -550,76 +551,76 @@ int main(void) {
     }
     // endregion
     // region render passes
-        /**
-     * <h2>Attachment description</h2>
-     *
-     * <p>Before creating the pipeline, we need to tell Vulkan about the
-     * <i>framebuffer attachments</i> that will be used while rendering.</p>
-     *
-     * We need to specify:
-     * <ul>
-     * <li>how many color and depth buffers there will be
-     * <li>how many samples to use for each of them
-     * <li>how their contents should be handled throughout the rendering ops.
-     * </ul>
-     *
-     * <p>All of the info is wrapped in a <i>render pass</i> object.<p>
-     *
-     * <p>Textures and frame-buffers in Vulkan are represented by
-     * <code>VkImage</code> objects with a certain pixel format,
-     * however the layout of the pixels in memory can change based on what
-     * we're trying to do with the an image.
-     *
-     * <dl>
-     * <dt><code>format</code></dt>
-     * <dd>The <code>format</code> of the colour attachment should match the
-     * format of the swap chain images.</dd>
-     * <dt><code>samples</code></dt>
-     * <dd>for <i>multisampling</i></dd>
-     * <dt><code>loadOp</code></dt>
-     * <dd>determines what to do with the data in the attachment before
-     * rendering. <i>applies to color and depth data</i> Possible values:
-     * <ul>
-     * <li><code>VK_ATTACHMENT_LOAD_OP_LOAD</code>: Preserve the existing contents
-     * of the attachment
-     * <li><code>VK_ATTACHMENT_LOAD_OP_CLEAR</code>: Clear the values to a
-     * constant at the start
-     * <li><code>VK_ATTACHMENT_OP_DONT_CARE</code>: Existing contents are undefined;
-     * we don't care about them
-     * </ul>
-     * </dd>
-     * <dt><code>storeOp</code></dt>
-     * <dd>determines what to do with the data in the attachment after rendering.
-     * <i>applies to color and depth data</i>
-     * Possible values:
-     * <ul>
-     * <li><code>VK_ATTACHMENT_STORE_OP_STORE</code>: Rendered contents will be
-     * stored in memory and can be read later
-     * <li><code>VK_ATTACHMENT_STORE_OP_DONT_CARE</code>: Contents of the
-     * framebuffer will be undefined after the rendering operation
-     * </ul>
-     * </dd>
-     * <dt><code>stencilLoadOp</code></dt>
-     * <dd>Same as <code>loadOp</code>, but for <i>stencil data</i></dd>
-     * <dt><code>stencilStoreOp</code></dt>
-     * <dd>Same as <code>storeOp</code>, but for <i>stencil data</i></dd>
-     * <dt><code>initialLayout</code></dt>
-     * <dd>specifies which layout the image will have before the render pass.
-     * Possible values:
-     * <ul>
-     * <li><code>VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL</code>: Images used as
-     * colour attachment
-     * <li><code>VK_IMAGE_LAYOUT_PRESENT_SRC_KHR</code>: Images to be presented
-     * in the swap chain
-     * <li><code>VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL</code>: Images to be used
-     * as destination for a memory copy operation
-     * </ul>
-     * </dd>
-     * <dt><code>finalLayout</code></dt>
-     * <dd>specifies the layout to automatically transition to when the render
-     * pass finishes. Possible values are the same as <code>initialLayout</code></dd>
-     * </dl>
-     */
+    /**
+ * <h2>Attachment description</h2>
+ *
+ * <p>Before creating the pipeline, we need to tell Vulkan about the
+ * <i>framebuffer attachments</i> that will be used while rendering.</p>
+ *
+ * We need to specify:
+ * <ul>
+ * <li>how many color and depth buffers there will be
+ * <li>how many samples to use for each of them
+ * <li>how their contents should be handled throughout the rendering ops.
+ * </ul>
+ *
+ * <p>All of the info is wrapped in a <i>render pass</i> object.<p>
+ *
+ * <p>Textures and frame-buffers in Vulkan are represented by
+ * <code>VkImage</code> objects with a certain pixel format,
+ * however the layout of the pixels in memory can change based on what
+ * we're trying to do with the an image.
+ *
+ * <dl>
+ * <dt><code>format</code></dt>
+ * <dd>The <code>format</code> of the colour attachment should match the
+ * format of the swap chain images.</dd>
+ * <dt><code>samples</code></dt>
+ * <dd>for <i>multisampling</i></dd>
+ * <dt><code>loadOp</code></dt>
+ * <dd>determines what to do with the data in the attachment before
+ * rendering. <i>applies to color and depth data</i> Possible values:
+ * <ul>
+ * <li><code>VK_ATTACHMENT_LOAD_OP_LOAD</code>: Preserve the existing contents
+ * of the attachment
+ * <li><code>VK_ATTACHMENT_LOAD_OP_CLEAR</code>: Clear the values to a
+ * constant at the start
+ * <li><code>VK_ATTACHMENT_OP_DONT_CARE</code>: Existing contents are undefined;
+ * we don't care about them
+ * </ul>
+ * </dd>
+ * <dt><code>storeOp</code></dt>
+ * <dd>determines what to do with the data in the attachment after rendering.
+ * <i>applies to color and depth data</i>
+ * Possible values:
+ * <ul>
+ * <li><code>VK_ATTACHMENT_STORE_OP_STORE</code>: Rendered contents will be
+ * stored in memory and can be read later
+ * <li><code>VK_ATTACHMENT_STORE_OP_DONT_CARE</code>: Contents of the
+ * framebuffer will be undefined after the rendering operation
+ * </ul>
+ * </dd>
+ * <dt><code>stencilLoadOp</code></dt>
+ * <dd>Same as <code>loadOp</code>, but for <i>stencil data</i></dd>
+ * <dt><code>stencilStoreOp</code></dt>
+ * <dd>Same as <code>storeOp</code>, but for <i>stencil data</i></dd>
+ * <dt><code>initialLayout</code></dt>
+ * <dd>specifies which layout the image will have before the render pass.
+ * Possible values:
+ * <ul>
+ * <li><code>VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL</code>: Images used as
+ * colour attachment
+ * <li><code>VK_IMAGE_LAYOUT_PRESENT_SRC_KHR</code>: Images to be presented
+ * in the swap chain
+ * <li><code>VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL</code>: Images to be used
+ * as destination for a memory copy operation
+ * </ul>
+ * </dd>
+ * <dt><code>finalLayout</code></dt>
+ * <dd>specifies the layout to automatically transition to when the render
+ * pass finishes. Possible values are the same as <code>initialLayout</code></dd>
+ * </dl>
+ */
     VkAttachmentDescription colorAttachment = {};
     colorAttachment.format = swapChainImageFormat;
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -979,12 +980,30 @@ int main(void) {
     pipelineInfo.basePipelineIndex = -1;
 
     VkPipeline graphicsPipeline;
-    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline) !=
-        VK_SUCCESS) {
+    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline) != VK_SUCCESS) {
         perror("failed to create graphics pipeline!");
         exit(EXIT_FAILURE);
     }
     // endregion
+    // region framebuffers
+    uint32_t swapChainFramebuffersCount = swapChainImageCount;
+    VkFramebuffer *swapChainFramebuffers = calloc(swapChainImageCount, sizeof(swapChainFramebuffers));
+    for (uint32_t i = 0; i < swapChainFramebuffersCount; ++i) {
+        VkImageView attachments[] = {swapChainImageViews[i]};
+        VkFramebufferCreateInfo framebufferInfo = {};
+        framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        framebufferInfo.renderPass = renderPass;
+        framebufferInfo.attachmentCount = 1;
+        framebufferInfo.pAttachments = attachments;
+        framebufferInfo.width = swapChainExtent.width;
+        framebufferInfo.height = swapChainExtent.height;
+        framebufferInfo.layers = 1;
+        if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &swapChainFramebuffers[i]) != VK_SUCCESS) {
+            perror("failed to create framebuffer!");
+            exit(EXIT_FAILURE);
+        }
+    }
+    // endregion framebuffers
     // endregion initVulkan
 
     // region mainLoop
@@ -1012,6 +1031,10 @@ int main(void) {
     }
     free(deviceExtensions);
     // endregion cleanup globals
+    for (int i = 0; i < swapChainFramebuffersCount; ++i) {
+        vkDestroyFramebuffer(device, swapChainFramebuffers[i], nullptr);
+    }
+    free(swapChainFramebuffers);
     vkDestroyPipeline(device, graphicsPipeline, nullptr);
     vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
     vkDestroyRenderPass(device, renderPass, nullptr);
