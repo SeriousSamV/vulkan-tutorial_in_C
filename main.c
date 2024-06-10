@@ -469,7 +469,6 @@ int main(void) {
     createInfo.pEnabledFeatures = &deviceFeatures;
     createInfo.enabledExtensionCount = deviceExtensionsCount;
     createInfo.ppEnabledExtensionNames = (const char *const *) deviceExtensions;
-    // endregion
     if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS) {
         perror("failed to create logical device!");
         exit(EXIT_FAILURE);
