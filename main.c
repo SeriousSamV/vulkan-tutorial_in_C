@@ -46,9 +46,9 @@ VkPresentModeKHR chooseSwapPresentMode(const VkPresentModeKHR *availablePresentM
 
 VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR *capabilities, GLFWwindow *window);
 
-uint32_t * readFile(const char* filePath, size_t *len);
+uint32_t *readFile(const char *filePath, size_t *len);
 
-VkShaderModule createShaderModule(VkDevice device, const uint32_t * code, size_t codeSize);
+VkShaderModule createShaderModule(VkDevice device, const uint32_t *code, size_t codeSize);
 
 __attribute__((unused)) void printAvailableExtensions() {
     uint32_t extensionCount = 0;
@@ -282,10 +282,12 @@ SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device, VkSurface
     return details;
 }
 
-VkSurfaceFormatKHR chooseSwapSurfaceFormat(const VkSurfaceFormatKHR *availableFormats, const int availableFormatsCount) {
+VkSurfaceFormatKHR
+chooseSwapSurfaceFormat(const VkSurfaceFormatKHR *availableFormats, const int availableFormatsCount) {
     for (int i = 0; i < availableFormatsCount; ++i) {
         const VkSurfaceFormatKHR availableFormat = availableFormats[i];
-        if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB && availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+        if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB &&
+            availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
             return availableFormat;
         }
     }
@@ -310,10 +312,7 @@ VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR *capabilities, GLFWwi
         int width, height;
         glfwGetFramebufferSize(window, &width, &height);
 
-        VkExtent2D actualExtent = {
-                .width = (uint32_t) width,
-                .height = (uint32_t) height
-        };
+        VkExtent2D actualExtent = {.width = (uint32_t) width, .height = (uint32_t) height};
         if (actualExtent.width < capabilities->minImageExtent.width) {
             actualExtent.width = capabilities->minImageExtent.width;
         } else if (actualExtent.width > capabilities->maxImageExtent.width) {
@@ -331,17 +330,18 @@ VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR *capabilities, GLFWwi
 }
 
 uint32_t *readFile(const char *filePath, size_t *len) {
-    FILE* file = fopen(filePath, "rb");
+    FILE *file = fopen(filePath, "rb");
     fseek(file, 0, SEEK_END);
     *len = ftell(file);
     fseek(file, 0, SEEK_SET);
-    uint32_t * buffer = calloc(*len, sizeof(buffer));
+    uint32_t *buffer = calloc(*len, sizeof(buffer));
     fread(buffer, 1, *len, file);
     fclose(file);
     return buffer;
 }
 
-__attribute__((unused)) VkShaderModule createShaderModule(VkDevice device, const uint32_t *code, const size_t codeSize) {
+__attribute__((unused)) VkShaderModule
+createShaderModule(VkDevice device, const uint32_t *code, const size_t codeSize) {
     if (code == nullptr || codeSize < 1) {
         perror("invalid code input!");
         exit(EXIT_FAILURE);
@@ -486,7 +486,8 @@ int main(void) {
                                                          (int) swapChainSupport.presentModesCount);
     VkExtent2D extent = chooseSwapExtent(&swapChainSupport.capabilities, window);
     uint32_t swapChainImageCount = swapChainSupport.capabilities.minImageCount + 1;
-    if (swapChainSupport.capabilities.maxImageCount > 0 && swapChainImageCount > swapChainSupport.capabilities.maxImageCount) {
+    if (swapChainSupport.capabilities.maxImageCount > 0 &&
+        swapChainImageCount > swapChainSupport.capabilities.maxImageCount) {
         swapChainImageCount = swapChainSupport.capabilities.maxImageCount;
     }
 
@@ -551,9 +552,11 @@ int main(void) {
     // endregion
     // region graphics pipeline
     size_t vertShaderCodeLen = 0;
-    uint32_t * const vertShaderCode = readFile("/Users/samuel_paul_v/CLionProjects/vulkan_in_c/vert.spv", &vertShaderCodeLen);
+    uint32_t *const vertShaderCode = readFile("/Users/samuel_paul_v/CLionProjects/vulkan_in_c/vert.spv",
+                                              &vertShaderCodeLen);
     size_t fragShaderCodeLen = 0;
-    uint32_t * const fragShaderCode = readFile("/Users/samuel_paul_v/CLionProjects/vulkan_in_c/frag.spv", &fragShaderCodeLen);
+    uint32_t *const fragShaderCode = readFile("/Users/samuel_paul_v/CLionProjects/vulkan_in_c/frag.spv",
+                                              &fragShaderCodeLen);
     VkShaderModule vertShaderModule = createShaderModule(device, vertShaderCode, vertShaderCodeLen);
     VkShaderModule fragShaderModule = createShaderModule(device, fragShaderCode, fragShaderCodeLen);
 
@@ -570,8 +573,240 @@ int main(void) {
     fragShaderStageInfo.pName = "main";
 
     VkPipelineShaderStageCreateInfo shaderStages[] = {vertexShaderStageInfo, fragShaderStageInfo};
+    // endregion
+    // region fixed functions
+    /**
+     * <h2>Dynamic State</h2>
+     *
+     * most of the pipeline state needs to be baked into the pipeline state.
+     * But a limited amount of the state can actually be changed without
+     * recreating the pipeline at draw time.
+     */
+    const uint32_t dynamicStatesCount = 2;
+    VkDynamicState *dynamicStates = calloc(2, sizeof(dynamicStates));
+    dynamicStates[0] = VK_DYNAMIC_STATE_VIEWPORT;
+    dynamicStates[1] = VK_DYNAMIC_STATE_SCISSOR;
+    VkPipelineDynamicStateCreateInfo dynamicState = {};
+    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicState.dynamicStateCount = dynamicStatesCount;
+    dynamicState.pDynamicStates = dynamicStates;
 
+    /**
+     * <h2>Vertex input</h2>
+     *
+     * The <code>VkPipelineVertexInputStateCreateInfo</code> structure
+     * describes the format of the vertex data that will be passes to the
+     * vertex shader. Describes in two ways:
+     *
+     * <ol>
+     * <li><strong>Binding</strong>: spacing between data and whether
+     * the data is per-vertex or per-instance</li>
+     * <li><strong>Attribute descriptions</strong>: type of the attributes
+     * passed to the vertex shader, which binding to load them from and at
+     * which offset.</li>
+     * </ol>
+     */
+    VkPipelineVertexInputStateCreateInfo vertexInputInfo = {};
+    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInputInfo.vertexBindingDescriptionCount = 0;
+    vertexInputInfo.pVertexBindingDescriptions = nullptr;
+    vertexInputInfo.vertexAttributeDescriptionCount = 0;
+    vertexInputInfo.pVertexAttributeDescriptions = nullptr;
 
+    /**
+     * <h2>Input Assembly</h2>
+     *
+     * The <code>VkPipelineInputAssemblyStateCreateInfo</code> struct describes
+     * two things:
+     * <ul>
+     * <li>what kind of geometry will be drawn from the vertices
+     * <ul>
+     * <li><code>VK_PRIMITIVE_TOPOLOGY_POINT_LIST</code>: points from vertices
+     * <li><code>VK_PRIMITIVE_TOPOLOGY_LINE_LIST</code>: line from every 2
+     * vertices without reuse
+     * <li><code>VK_PRIMITIVE_TOPOLOGY_LINE_STRIP</code>: the end vertex of
+     * every line is used as start vertex for the next line
+     * <li><code>VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST</code>: triangle from
+     * every 3 vertices without reuse
+     * <li><code>VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP</code>: the second and
+     * the third vertex of every triangle are used as first two vertices of
+     * the next triangle
+     * </ul>
+     * </li>
+     * <li>if primitive restarts should be enabled.</li>
+     * </ul>
+     */
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly = {};
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+    /**
+     * <h2>Viewports and scissors</h2>
+     *
+     * <dl>
+     * <dt>Viewport</dt>
+     * <dd>Describes the region of the framebuffer that the output will be rendered
+     * to.</dd>
+     * <dt>Scissors</dt>
+     * <dd>Defines the regions where pixels will be actually stored. Any pixels
+     * outside the scissors rectangles will be discarded by the rasterizer.</dd>
+     * </dl>
+     */
+    VkViewport viewport = {};
+    viewport.x = 0.f;
+    viewport.y = 0.f;
+    viewport.width = (float) swapChainExtent.width;
+    viewport.height = (float) swapChainExtent.height;
+    viewport.minDepth = 0.f;
+    viewport.maxDepth = 1.f;
+
+    VkRect2D scissor = {};
+    scissor.offset.x = 0;
+    scissor.offset.y = 0;
+    scissor.extent = swapChainExtent;
+
+    VkPipelineViewportStateCreateInfo viewportState = {};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.pViewports = &viewport;
+    viewportState.scissorCount = 1;
+    viewportState.pScissors = &scissor;
+
+    /**
+     * <h2>Raterizer</h2>
+     *
+     * <p>Rasterizer takes the geometry that is shaped by the vertices from the
+     * vertex shader and turns it into fragments to be coloured by the fragment
+     * shader.</p>
+     *
+     * <p>It also performs <strong>depth testing</strong>, <strong>face culling
+     * </strong>
+     * and the <strong>scissor test</strong>, and it can be configured to output
+     * fragments that fill entire polygons or just the edges (<strong>wireframe
+     * rendering</strong>).</p>
+     *
+     * <p>Defined by <code>VkPipelineRasterizationStateCreateInfo</code> struct:
+     * <dl>
+     * <dt><code>depthClampEnable</code></dt>
+     * <dd>if <code>VK_TRUE</code>, fragments that are beyond the near and far
+     * planes are clamped to them as opposed to discarding them. <i>This is
+     * useful in special cases like shadow maps.</i></dd>
+     * <dt><code>rasterizerDiscardEnable</dt>
+     * <dd>If <code>VK_TRUE</code>, then geometry never passes through the
+     * rasterizer state. <i>This basically disables any output to the
+     * framebuffer</i></dd>
+     * <dt><code>polygonMode</code></dt>
+     * <dd>determines how fragments are generated for geometry. The following
+     * modes are available:
+     * <ul>
+     * <li><code>VK_POLYGON_MODE_FILL</code>: fill the area of the polygon with
+     * fragments
+     * <li><code>VK_POLYGON_MODE_LINE</code>: polygon edges are drawn as lines
+     * <li><code>VK_POLYGON_MODE_POINT</code>: polygon vertices are drawn as points
+     * </ul></dd>
+     * <dt><code>lineWidth</code></dt>
+     * <dd>Describes the thickness of lines in terms of number of fragments.
+     * The max line width that is supported depends on the hardware and any line
+     * thicker than <code>1.0f</code> requires us to enable the
+     * <code>wideLine</code> GPU feature.</dd>
+     * <dt><code>cullMode</code></dt>
+     * <dd>Determines the type of face culling to use. We can choose to:
+     * <ul>
+     * <li>disable culling
+     * <li>cull the front faces
+     * <li>cull the back faces
+     * <li>cull both front and back faces
+     * </ul></dd>
+     * <dt><code>frontFace</code></dt>
+     * <dd>Specifies the vertex order for faces to be considered front-facing
+     * and can be <i>clockwise</i> or <i>counterclockwise</i>.</dd>
+     * <dt><code>depthBias*</code></dt>
+     * <dd>The rasterizer can alter the depth values by adding a constant value
+     * or biasing them based on a fragment's slope. <i>This is sometimes used for
+     * shadow mapping.</i></dd>
+     * </dl>
+     * </p>
+    */
+    VkPipelineRasterizationStateCreateInfo rasterizer = {};
+    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterizer.depthClampEnable = VK_FALSE;
+    rasterizer.rasterizerDiscardEnable = VK_FALSE;
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizer.lineWidth = 1.f;
+    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+    rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+    rasterizer.depthBiasEnable = VK_FALSE;
+
+    /**
+     * <h2>Multisampling</h2>
+     *
+     * The <code>VkPipelineMultisampleStateCreateInfo</code> struct configures
+     * multisampling, which is one of the ways to perform <code>anti-aliasing</code>.
+     * It works by combining the fragment shader results of multiple polygons that
+     * rasterize to the same pixel.
+     */
+    VkPipelineMultisampleStateCreateInfo multisampling = {};
+    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampling.sampleShadingEnable = VK_FALSE;
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    multisampling.minSampleShading = 1.f;
+    multisampling.pSampleMask = nullptr;
+    multisampling.alphaToCoverageEnable = VK_FALSE;
+    multisampling.alphaToOneEnable = VK_FALSE;
+
+    /**
+     * <h2>Color blending</h2>
+     *
+     * After a fragment shader has returned a colour, it needs to be combined
+     * with the colour that is already in the framebuffer. This transformation
+     * is known as colour blending and there are two ways to do it:
+     *
+     * <ul>
+     * <li>Mix the old and new values to produce the final colour
+     * <li>Combine the old and new value using a bitwise operation
+     * </ul>
+     *
+     * Two types of structs to configure colour blending:
+     * <ul>
+     * <li><code>VkPipelineColorBlendAttachmentState</code> contains per
+     * attached framebuffer
+     * <li><code>VkPipelineColorBlendStateCreateInfo</code> contains the <i>global</i>
+     * color blending settings.
+     * </ul>
+     */
+    VkPipelineColorBlendAttachmentState colorBlendAttachment = {};
+    colorBlendAttachment.colorWriteMask =
+            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    colorBlendAttachment.blendEnable = VK_FALSE;
+
+    VkPipelineColorBlendStateCreateInfo colorBlending = {};
+    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlending.logicOpEnable = VK_FALSE;
+    colorBlending.attachmentCount = 1;
+    colorBlending.pAttachments = &colorBlendAttachment;
+
+    /**
+     * <h2>Pipeline layout</h2>
+     *
+     * <p>You can use <code>uniform</code> values in shaders, which are globals
+     * similar
+     * to dynamic state variables that can be changed at drawing time to alter the
+     * behavior of your shaders without having to recreate them.
+     * They are commonly used to pass the <i>transformation matrix</i> to the
+     * vertex shader, or to create <i>texture samplers</i> in the fragment shader.
+     * </p>
+     *
+     * Uniform values needs to be specified during pipeline creation by creating
+     * a <code>VkPipelineLayout</code> object.
+     */
+    VkPipelineLayout pipelineLayout;
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
+        perror("failed to create pipeline layout!");
+        exit(EXIT_FAILURE);
+    }
     // endregion
     // endregion initVulkan
 
@@ -600,6 +835,8 @@ int main(void) {
     }
     free(deviceExtensions);
     // endregion cleanup globals
+    vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+    free(dynamicStates);
     free(vertShaderCode);
     free(fragShaderCode);
     vkDestroyShaderModule(device, fragShaderModule, nullptr);
