@@ -308,7 +308,7 @@ QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device, VkSurfaceKHR surfa
             indices.isGraphicsFamilySet = true;
             indices.graphicsFamily = i;
         }
-        if (indices.isGraphicsFamilySet) {
+        if (indices.isGraphicsFamilySet && indices.isPresentFamilySet) {
             break;
         }
     }
@@ -439,8 +439,8 @@ void recordCommandBuffer(VkRenderPass renderPass, VkFramebuffer *swapChainFrameb
      */
     VkCommandBufferBeginInfo beginInfo = {};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-    beginInfo.flags = 0;
-    beginInfo.pInheritanceInfo = nullptr;
+    beginInfo.flags = 0; // Optional
+    beginInfo.pInheritanceInfo = nullptr; // Optional
     if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
         perror("failed to begin recording command buffers!");
         exit(EXIT_FAILURE);
@@ -462,17 +462,19 @@ void recordCommandBuffer(VkRenderPass renderPass, VkFramebuffer *swapChainFrameb
      * </dl>
      * </p>
      */
-    VkRenderPassBeginInfo renderPassBeginInfo = {};
-    renderPassBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    renderPassBeginInfo.renderPass = renderPass;
-    renderPassBeginInfo.framebuffer = swapChainFramebuffers[imageIndex];
-    renderPassBeginInfo.renderArea.offset.x = 0;
-    renderPassBeginInfo.renderArea.offset.y = 0;
-    renderPassBeginInfo.renderArea.extent = swapChainExtent;
-
-    VkClearValue clearColor = {{{0.f, 0.f, 0.f, 1.f}}};
-    renderPassBeginInfo.clearValueCount = 1;
-    renderPassBeginInfo.pClearValues = &clearColor;
+    VkRenderPassBeginInfo renderPassInfo = {};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    renderPassInfo.renderPass = renderPass;
+#pragma clang diagnostic push
+#pragma ide diagnostic ignored "NullDereference"
+    renderPassInfo.framebuffer = swapChainFramebuffers[imageIndex];
+#pragma clang diagnostic pop
+    renderPassInfo.renderArea.offset.x = 0;
+    renderPassInfo.renderArea.offset.y = 0;
+    renderPassInfo.renderArea.extent = swapChainExtent;
+    VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
+    renderPassInfo.clearValueCount = 1;
+    renderPassInfo.pClearValues = &clearColor;
 
     /**
      * The func <code>vkCmdBeginRenderPass</code>
@@ -490,7 +492,7 @@ void recordCommandBuffer(VkRenderPass renderPass, VkFramebuffer *swapChainFrameb
      * </dd>
      * </dl>
      */
-    vkCmdBeginRenderPass(commandBuffer, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+    vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
     /**
      * <h3>Basic drawing commands</h3>
@@ -513,6 +515,7 @@ void recordCommandBuffer(VkRenderPass renderPass, VkFramebuffer *swapChainFrameb
     VkRect2D scissor = {};
     scissor.offset.x = 0;
     scissor.offset.y = 0;
+    scissor.extent = swapChainExtent;
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
     /**
@@ -633,17 +636,25 @@ int main(void) {
     // region logical devices and queues
     VkDevice device;
     QueueFamilyIndices indices = findQueueFamilies(physicalDevice, surface);
-    VkDeviceQueueCreateInfo queueCreateInfo = {};
-    queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-    queueCreateInfo.queueFamilyIndex = indices.graphicsFamily;
-    queueCreateInfo.queueCount = 1;
+    uint32_t queueCreateInfosCount = 0;
+    if (indices.graphicsFamily != indices.presentFamily) {
+        queueCreateInfosCount = 2;
+    } else {
+        queueCreateInfosCount = 1;
+    }
+    VkDeviceQueueCreateInfo *queueCreateInfos = calloc(queueCreateInfosCount, sizeof(VkDeviceQueueCreateInfo));
     float queuePriority = 1.0f;
-    queueCreateInfo.pQueuePriorities = &queuePriority;
+    for (int i = 0; i < queueCreateInfosCount; ++i) {
+        queueCreateInfos[i].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+        queueCreateInfos[i].queueFamilyIndex = indices.graphicsFamily;
+        queueCreateInfos[i].queueCount = 1;
+        queueCreateInfos[i].pQueuePriorities = &queuePriority;
+    }
     VkPhysicalDeviceFeatures deviceFeatures = {};
     VkDeviceCreateInfo createInfo = {};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-    createInfo.pQueueCreateInfos = &queueCreateInfo;
-    createInfo.queueCreateInfoCount = 1;
+    createInfo.queueCreateInfoCount = queueCreateInfosCount;
+    createInfo.pQueueCreateInfos = queueCreateInfos;
     createInfo.enabledLayerCount = validationLayersCount;
     createInfo.ppEnabledLayerNames = (const char *const *) validationLayers;
     createInfo.pEnabledFeatures = &deviceFeatures;
@@ -654,10 +665,18 @@ int main(void) {
         exit(EXIT_FAILURE);
     }
 
-    VkQueue graphicsQueue;
+    VkQueue graphicsQueue = VK_NULL_HANDLE;
     vkGetDeviceQueue(device, indices.graphicsFamily, 0, &graphicsQueue);
-    VkQueue presentQueue;
+    if (graphicsQueue == VK_NULL_HANDLE) {
+        perror("failed to get reference to graphicsQueue!");
+        exit(EXIT_FAILURE);
+    }
+    VkQueue presentQueue = VK_NULL_HANDLE;
     vkGetDeviceQueue(device, indices.presentFamily, 0, &presentQueue);
+    if (presentQueue == VK_NULL_HANDLE) {
+        perror("failed to get reference to presentQueue!");
+        exit(EXIT_FAILURE);
+    }
     // endregion
     // region swap chain
     SwapChainSupportDetails swapChainSupport = querySwapChainSupport(physicalDevice, surface);
@@ -705,8 +724,8 @@ int main(void) {
     VkImage *swapChainImages = calloc(swapChainImageCount, sizeof(VkImage));
     vkGetSwapchainImagesKHR(device, swapChain, &swapChainImageCount, swapChainImages);
 
-    __attribute__((unused)) VkFormat swapChainImageFormat = surfaceFormat.format;
-    __attribute__((unused)) VkExtent2D swapChainExtent = extent;
+    VkFormat swapChainImageFormat = surfaceFormat.format;
+    VkExtent2D swapChainExtent = extent;
     // endregion
     // region image views
     uint32_t swapChainImageViewsCount = swapChainImageCount;
@@ -906,11 +925,11 @@ int main(void) {
     VkShaderModule vertShaderModule = createShaderModule(device, vertShaderCode, vertShaderCodeLen);
     VkShaderModule fragShaderModule = createShaderModule(device, fragShaderCode, fragShaderCodeLen);
 
-    VkPipelineShaderStageCreateInfo vertexShaderStageInfo = {};
-    vertexShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    vertexShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
-    vertexShaderStageInfo.module = vertShaderModule;
-    vertexShaderStageInfo.pName = "main";
+    VkPipelineShaderStageCreateInfo vertShaderStageInfo = {};
+    vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    vertShaderStageInfo.module = vertShaderModule;
+    vertShaderStageInfo.pName = "main";
 
     VkPipelineShaderStageCreateInfo fragShaderStageInfo = {};
     fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -953,9 +972,9 @@ int main(void) {
     VkPipelineVertexInputStateCreateInfo vertexInputInfo = {};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
     vertexInputInfo.vertexBindingDescriptionCount = 0;
-    vertexInputInfo.pVertexBindingDescriptions = nullptr;
+    vertexInputInfo.pVertexBindingDescriptions = nullptr; // Optional
     vertexInputInfo.vertexAttributeDescriptionCount = 0;
-    vertexInputInfo.pVertexAttributeDescriptions = nullptr;
+    vertexInputInfo.pVertexAttributeDescriptions = nullptr; // Optional
 
     /**
      * <h2>Input Assembly</h2>
@@ -998,12 +1017,12 @@ int main(void) {
      * </dl>
      */
     VkViewport viewport = {};
-    viewport.x = 0.f;
-    viewport.y = 0.f;
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
     viewport.width = (float) swapChainExtent.width;
     viewport.height = (float) swapChainExtent.height;
-    viewport.minDepth = 0.f;
-    viewport.maxDepth = 1.f;
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
 
     VkRect2D scissor = {};
     scissor.offset.x = 0;
@@ -1077,10 +1096,13 @@ int main(void) {
     rasterizer.depthClampEnable = VK_FALSE;
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
-    rasterizer.lineWidth = 1.f;
+    rasterizer.lineWidth = 1.0f;
     rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
     rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
+    rasterizer.depthBiasConstantFactor = 0.0f; // Optional
+    rasterizer.depthBiasClamp = 0.0f; // Optional
+    rasterizer.depthBiasSlopeFactor = 0.0f; // Optional
 
     /**
      * <h2>Multisampling</h2>
@@ -1094,10 +1116,10 @@ int main(void) {
     multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
     multisampling.sampleShadingEnable = VK_FALSE;
     multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-    multisampling.minSampleShading = 1.f;
-    multisampling.pSampleMask = nullptr;
-    multisampling.alphaToCoverageEnable = VK_FALSE;
-    multisampling.alphaToOneEnable = VK_FALSE;
+    multisampling.minSampleShading = 1.0f; // Optional
+    multisampling.pSampleMask = nullptr; // Optional
+    multisampling.alphaToCoverageEnable = VK_FALSE; // Optional
+    multisampling.alphaToOneEnable = VK_FALSE; // Optional
 
     /**
      * <h2>Color blending</h2>
@@ -1121,14 +1143,26 @@ int main(void) {
      */
     VkPipelineColorBlendAttachmentState colorBlendAttachment = {};
     colorBlendAttachment.colorWriteMask =
-            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+            VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT |
+            VK_COLOR_COMPONENT_A_BIT;
     colorBlendAttachment.blendEnable = VK_FALSE;
+    colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE; // Optional
+    colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO; // Optional
+    colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD; // Optional
+    colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE; // Optional
+    colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO; // Optional
+    colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD; // Optional
 
     VkPipelineColorBlendStateCreateInfo colorBlending = {};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     colorBlending.logicOpEnable = VK_FALSE;
+    colorBlending.logicOp = VK_LOGIC_OP_COPY; // Optional
     colorBlending.attachmentCount = 1;
     colorBlending.pAttachments = &colorBlendAttachment;
+    colorBlending.blendConstants[0] = 0.0f; // Optional
+    colorBlending.blendConstants[1] = 0.0f; // Optional
+    colorBlending.blendConstants[2] = 0.0f; // Optional
+    colorBlending.blendConstants[3] = 0.0f; // Optional
 
     /**
      * <h2>Pipeline layout</h2>
@@ -1147,6 +1181,10 @@ int main(void) {
     VkPipelineLayout pipelineLayout;
     VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = 0; // Optional
+    pipelineLayoutInfo.pSetLayouts = nullptr; // Optional
+    pipelineLayoutInfo.pushConstantRangeCount = 0; // Optional
+    pipelineLayoutInfo.pPushConstantRanges = nullptr; // Optional
     if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
         perror("failed to create pipeline layout!");
         exit(EXIT_FAILURE);
@@ -1154,28 +1192,33 @@ int main(void) {
     // endregion
     VkGraphicsPipelineCreateInfo pipelineInfo = {};
     pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-    VkPipelineShaderStageCreateInfo shaderStages[] = {vertexShaderStageInfo, fragShaderStageInfo};
     pipelineInfo.stageCount = 2;
+    VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
     pipelineInfo.pStages = shaderStages;
     pipelineInfo.pVertexInputState = &vertexInputInfo;
     pipelineInfo.pInputAssemblyState = &inputAssembly;
     pipelineInfo.pViewportState = &viewportState;
     pipelineInfo.pRasterizationState = &rasterizer;
     pipelineInfo.pMultisampleState = &multisampling;
-    pipelineInfo.pDepthStencilState = nullptr;
+    pipelineInfo.pDepthStencilState = nullptr; // Optional
     pipelineInfo.pColorBlendState = &colorBlending;
     pipelineInfo.pDynamicState = &dynamicState;
     pipelineInfo.layout = pipelineLayout;
     pipelineInfo.renderPass = renderPass;
     pipelineInfo.subpass = 0;
-    pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
-    pipelineInfo.basePipelineIndex = -1;
+    pipelineInfo.basePipelineHandle = VK_NULL_HANDLE; // Optional
+    pipelineInfo.basePipelineIndex = -1; // Optional
 
     VkPipeline graphicsPipeline;
     if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline) != VK_SUCCESS) {
         perror("failed to create graphics pipeline!");
         exit(EXIT_FAILURE);
     }
+
+    free(vertShaderCode);
+    free(fragShaderCode);
+    vkDestroyShaderModule(device, fragShaderModule, nullptr);
+    vkDestroyShaderModule(device, vertShaderModule, nullptr);
     // endregion
     // region framebuffers
     uint32_t swapChainFramebuffersCount = swapChainImageCount;
@@ -1330,10 +1373,6 @@ int main(void) {
     vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
     vkDestroyRenderPass(device, renderPass, nullptr);
     free(dynamicStates);
-    free(vertShaderCode);
-    free(fragShaderCode);
-    vkDestroyShaderModule(device, fragShaderModule, nullptr);
-    vkDestroyShaderModule(device, vertShaderModule, nullptr);
     for (int i = 0; i < swapChainImageCount; ++i) {
         vkDestroyImageView(device, swapChainImageViews[i], nullptr);
     }
@@ -1341,6 +1380,7 @@ int main(void) {
     vkDestroySwapchainKHR(device, swapChain, nullptr);
     free(swapChainImages);
     vkDestroySurfaceKHR(instance, surface, nullptr);
+    free(queueCreateInfos);
     vkDestroyDevice(device, nullptr);
     DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
     vkDestroyInstance(instance, NULL);
